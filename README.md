@@ -12,6 +12,14 @@ No runtime dependencies. The audio side shells out to `ffmpeg`, which is a
 program rather than a wheel that can fail to build. Nothing is uploaded; the
 file never leaves the machine.
 
+![cuecheck naming the two mistimed lines in a file whose median offset is 0.047s](docs/demo.gif)
+
+Every character above came out of a real run. `tools/demo.py` runs cuecheck
+against the committed fixture and draws the bytes it captured, so the picture
+changes when the output does; nothing was typed into a transcript. Two things
+are added and nothing else: colour, and the line wrapping a 96-column terminal
+would do. It is silent, as every GIF is.
+
 ---
 
 ## The failure every other tool is blind to
