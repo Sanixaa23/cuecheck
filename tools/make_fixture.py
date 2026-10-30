@@ -6,10 +6,17 @@ numbers are right. So the fixture is derived instead of written.
 
 `legible-short.mp4` was rendered scene by scene, each scene lasting exactly
 as long as its own narration clip plus a fixed breath, snapped to whole
-frames. Those clips are in the repository, so this script measures them and
-recomputes the same boundaries the renderer used. The result is a subtitle
-file that is correct by construction -- every cue starts where its line of
-speech starts, because both come from the same measurement.
+frames. Those clips are committed here in `corpus/narration/`, so this script
+measures them, recomputes the same boundaries the renderer used, and lays the
+clips back out on that grid as one audio track. The result is a subtitle file
+and an audio file that are correct relative to each other by construction --
+every cue starts where its line of speech starts, because both come from the
+same measurement.
+
+Building the audio here rather than pointing at the video is what makes the
+claim checkable from a clone of this repository alone. Depending on a sibling
+checkout meant the two tests that matter most skipped themselves for anyone
+who cloned only this project, which is the same as not having them.
 
 Then it writes a second copy with two cues deliberately moved by amounts
 printed on screen. A checker worth anything must name those two and leave
@@ -24,8 +31,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from typing import List, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +49,8 @@ from cuecheck.cues import format_timestamp              # noqa: E402
 PAD = 0.45
 FPS = 30.0
 
-NARRATION = os.path.join(ROOT, os.pardir, "legible", "docs", "narration")
+NARRATION = os.path.join(ROOT, "corpus", "narration")
+AUDIO_OUT = os.path.join(ROOT, "corpus", "legible-narration.m4a")
 
 # The script as generated, in order. The text is what is actually spoken, so
 # the characters-per-second figures this fixture produces are real.
@@ -76,9 +86,14 @@ def clip_seconds(path: str) -> float:
             + float(match.group(3)))
 
 
+# Filled in by boundaries(): (clip name, spoken seconds, scene seconds).
+_scenes: List[Tuple[str, float, float]] = []
+
+
 def boundaries() -> List[Tuple[float, float, str]]:
     """(start, end, text) for every line, on the renderer's own grid."""
     out: List[Tuple[float, float, str]] = []
+    del _scenes[:]
     cursor = 0.0
     for name, text in SCRIPT:
         clip = os.path.join(NARRATION, name + ".mp3")
@@ -92,6 +107,7 @@ def boundaries() -> List[Tuple[float, float, str]]:
         scene = frames / FPS
         # The cue covers the speech, not the breath after it.
         out.append((cursor, cursor + spoken, text))
+        _scenes.append((name, spoken, scene))
         cursor += scene
     return out
 
@@ -103,10 +119,40 @@ def write_srt(path: str, rows: List[Tuple[float, float, str]]) -> None:
                 number, format_timestamp(start), format_timestamp(end), text))
 
 
+def build_audio(scenes: List[Tuple[str, float, float]]) -> None:
+    """Lay the clips back out on the renderer's grid, as one track.
+
+    Each clip is padded to its scene's exact length, so the speech in the
+    result starts where the subtitle file says it does. `apad=whole_dur`
+    rather than `pad_dur`: the part has to be exactly as long as the scene,
+    or every later line drifts by the rounding.
+    """
+    work = tempfile.mkdtemp(prefix="cuecheck-fixture-")
+    parts = []
+    for position, (name, _spoken, scene) in enumerate(scenes):
+        clip = os.path.join(NARRATION, name + ".mp3")
+        part = os.path.join(work, "%02d.wav" % position)
+        subprocess.run([ffmpeg(), "-y", "-v", "error", "-i", clip,
+                        "-af", "apad=whole_dur=%.6f" % scene,
+                        "-t", "%.6f" % scene,
+                        "-ar", "44100", "-ac", "1", part], check=True)
+        parts.append(part)
+
+    listing = os.path.join(work, "list.txt")
+    with open(listing, "w", encoding="utf-8") as handle:
+        for part in parts:
+            handle.write("file '%s'\n" % part.replace("\\", "/"))
+    subprocess.run([ffmpeg(), "-y", "-v", "error", "-f", "concat",
+                    "-safe", "0", "-i", listing,
+                    "-c:a", "aac", "-b:a", "96k", AUDIO_OUT], check=True)
+    shutil.rmtree(work, ignore_errors=True)
+
+
 def main() -> int:
     rows = boundaries()
     corpus = os.path.join(ROOT, "corpus")
     os.makedirs(corpus, exist_ok=True)
+    build_audio(_scenes)
 
     clean = os.path.join(corpus, "legible-clean.srt")
     write_srt(clean, rows)

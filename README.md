@@ -122,11 +122,16 @@ numbers are right.
 
 So the fixture is derived. [`legible`](https://github.com/Sanixaa23/legible)'s
 short video was rendered scene by scene, each scene lasting exactly as long as
-its own narration clip plus a fixed breath, snapped to whole frames. Those
-clips are committed, so `tools/make_fixture.py` measures them and recomputes
-the same boundaries the renderer used. The result is a subtitle file that is
-correct **by construction**, because the cues and the speech come from one
-measurement.
+its own narration clip plus a fixed breath, snapped to whole frames. Those ten
+clips are committed here in `corpus/narration/`, so `tools/make_fixture.py`
+measures them, recomputes the same boundaries the renderer used, and lays the
+clips back out as one audio track on that same grid. The subtitle file and the
+audio are correct relative to each other **by construction**, because the cues
+and the speech come from one measurement.
+
+Both sides live in this repository on purpose. They did not at first, and the
+two tests that carry the central claim skipped themselves for anyone who
+cloned only this project — which is the same as not having them.
 
 ```bash
 python tools/make_fixture.py
@@ -204,8 +209,9 @@ python -m pytest -q          # 31 tests
 ```
 
 Most tests build the speech intervals by hand and need no ffmpeg and no media
-file, so the expected offsets are arithmetic rather than opinion. The two that
-use the real video skip themselves when it is not there.
+file, so the expected offsets are arithmetic rather than opinion. The two
+ground-truth tests build their own audio from `corpus/narration/` on first
+run and skip only if ffmpeg is unavailable.
 
 ## What it does not do
 

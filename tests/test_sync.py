@@ -4,13 +4,19 @@ Most of these run on a hand-built `Audio` so they need no ffmpeg and no media
 file: the speech intervals are stated outright, which makes the expected
 offset arithmetic rather than opinion.
 
-The last two run against the real thing. `tools/make_fixture.py` derives a
-subtitle file from the narration clips that `legible-short.mp4` was rendered
-from, so its correct timings are known by construction, and writes a second
-copy with two cues moved by stated amounts. The checker must name exactly
-those two: missing one is the obvious failure, and reporting a third is the
-expensive one, because this tool's output tells someone to go and retime
-their work.
+The last two run against real audio. `tools/make_fixture.py` measures the
+narration clips committed in `corpus/narration/`, derives a subtitle file from
+them, and lays the same clips out as one audio track on the same grid -- so
+the correct timings are known by construction rather than asserted. It then
+writes a second copy with two cues moved by stated amounts. The checker must
+name exactly those two: missing one is the obvious failure, and reporting a
+third is the expensive one, because this tool's output tells someone to go and
+retime their work.
+
+Both the clips and the built track live in this repository, so these two do
+not depend on a sibling checkout. They did once, and they skipped themselves
+for anyone who cloned only this project, which is the same as not having
+them.
 """
 import os
 import subprocess
@@ -28,7 +34,22 @@ from cuecheck.cues import Cue, parse  # noqa: E402
 
 CLEAN = os.path.join(ROOT, "corpus", "legible-clean.srt")
 SHIFTED = os.path.join(ROOT, "corpus", "legible-shifted.srt")
-VIDEO = os.path.join(ROOT, os.pardir, "legible", "docs", "legible-short.mp4")
+AUDIO = os.path.join(ROOT, "corpus", "legible-narration.m4a")
+CLIPS = os.path.join(ROOT, "corpus", "narration")
+FIXTURE = os.path.join(ROOT, "tools", "make_fixture.py")
+
+
+def built_fixture():
+    """Build the fixture if it is not there yet; skip if ffmpeg is not."""
+    if os.path.exists(AUDIO) and os.path.exists(CLEAN)             and os.path.exists(SHIFTED):
+        return
+    if not os.path.isdir(CLIPS):
+        pytest.skip("corpus/narration/ is missing")
+    done = subprocess.run([sys.executable, FIXTURE], capture_output=True,
+                          text=True)
+    if done.returncode != 0 or not os.path.exists(AUDIO):
+        pytest.skip("could not build the fixture: %s"
+                    % (done.stderr or "").strip()[:200])
 
 
 def audio(*spans, duration=60.0, continuous=False):
@@ -131,35 +152,25 @@ def test_a_near_zero_median_hides_badly_timed_cues():
     assert report.worst_offset >= 1.0
 
 
-@pytest.mark.skipif(not os.path.exists(VIDEO),
-                    reason="needs legible-short.mp4 and its narration clips")
 def test_the_derived_fixture_is_reported_as_correct():
-    if not os.path.exists(CLEAN):
-        subprocess.run([sys.executable,
-                        os.path.join(ROOT, "tools", "make_fixture.py")],
-                       check=True, capture_output=True)
+    built_fixture()
     from cuecheck.audio import analyse
 
     with open(CLEAN, encoding="utf-8") as handle:
         cues = parse(handle.read()).cues
-    report = sync.time_cues(cues, analyse(VIDEO))
+    report = sync.time_cues(cues, analyse(AUDIO))
     assert len(report.measured) == len(cues)
     assert report.off == ()
     assert report.over_silence == ()
 
 
-@pytest.mark.skipif(not os.path.exists(VIDEO),
-                    reason="needs legible-short.mp4 and its narration clips")
 def test_exactly_the_two_shifted_cues_are_reported():
-    if not os.path.exists(SHIFTED):
-        subprocess.run([sys.executable,
-                        os.path.join(ROOT, "tools", "make_fixture.py")],
-                       check=True, capture_output=True)
+    built_fixture()
     from cuecheck.audio import analyse
 
     with open(SHIFTED, encoding="utf-8") as handle:
         cues = parse(handle.read()).cues
-    report = sync.time_cues(cues, analyse(VIDEO))
+    report = sync.time_cues(cues, analyse(AUDIO))
 
     reported = sorted(t.cue.index for t in report.off)
     assert reported == [3, 7], "expected cues 3 and 7, got %s" % reported
