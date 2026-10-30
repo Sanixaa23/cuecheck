@@ -1,0 +1,49 @@
+1
+00:00:00,000 --> 00:00:05,720
+You just read a whole page. Be honest —
+can you remember one single sentence?
+
+2
+00:00:06,167 --> 00:00:10,377
+It is not your attention span.
+It is the shape of the text.
+
+3
+00:00:10,833 --> 00:00:17,753
+Sixty words before a single break. Your eyes
+have to carry all of it before any of it means anything.
+
+4
+00:00:18,200 --> 00:00:22,480
+So we broke it apart.
+Sixty words, down to twenty-eight.
+
+5
+00:00:22,933 --> 00:00:29,463
+Same words. Every single one. Nothing rewritten,
+nothing summarised, nothing deleted.
+
+6
+00:00:29,900 --> 00:00:35,930
+Here's what nobody checks. Tools that simplify
+text quietly change what it says.
+
+7
+00:00:36,367 --> 00:00:45,357
+Antibiotics do not work against viruses becomes
+antibiotics work against viruses. Opposite meaning.
+
+8
+00:00:45,800 --> 00:00:52,230
+So this one counts what has to survive.
+Every number. Every name. Every not.
+
+9
+00:00:52,667 --> 00:00:55,257
+Thirteen out of thirteen. Kept.
+
+10
+00:00:55,700 --> 00:01:02,390
+It's called legible. Free, offline, open source.
+Your text never leaves your machine.
+
