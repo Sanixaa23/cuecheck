@@ -213,6 +213,16 @@ file, so the expected offsets are arithmetic rather than opinion. The two
 ground-truth tests build their own audio from `corpus/narration/` on first
 run and skip only if ffmpeg is unavailable.
 
+CI runs the suite on Linux and Windows, and a skipped test fails the job --
+the two tests that carry the central claim used to skip themselves, and a
+test that skips where it matters is the same as not having it. A second job
+reinstalls without `imageio-ffmpeg` and measures with the distribution's own
+ffmpeg instead of the bundled build, because `silencedetect` is the whole
+measurement: if two builds disagreed about where the speech starts, the
+offsets above would be true of one machine and nowhere else. A third job
+exercises all three exit codes, including a file it must refuse to judge --
+a green pipeline that cannot go red is theatre.
+
 ## What it does not do
 
 It does not align text to audio, so it cannot tell you which words belong to

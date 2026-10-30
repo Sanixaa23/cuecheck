@@ -1,0 +1,139 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    name: tests (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install with the bundled ffmpeg
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,ffmpeg]"
+      - name: Tests, and none of them skipped
+        # The two tests that carry the central claim used to skip themselves
+        # when their fixture was not reachable, which is the same as not
+        # having them. A skip in this suite is therefore a failure, not a
+        # note: they build their own audio now, so there is nothing left to
+        # legitimately skip.
+        shell: bash
+        run: |
+          python -m pytest tests/ -q -rs | tee result.txt
+          if grep -q skipped result.txt; then
+            echo "a test skipped itself; see the -rs lines above"
+            exit 1
+          fi
+
+  system-ffmpeg:
+    name: the same verdicts with the system ffmpeg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ffmpeg from the distribution
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Install without imageio-ffmpeg
+        # No bundled build, so audio.ffmpeg() has to fall back to PATH. That
+        # fallback is the path almost every real user takes and it was not
+        # covered by anything.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Which ffmpeg is being measured with
+        run: |
+          which ffmpeg
+          ffmpeg -version | head -1
+          python -c "from cuecheck.audio import ffmpeg; print('cuecheck uses', ffmpeg())"
+      - name: The ground-truth tests, measured by a different ffmpeg build
+        # silencedetect is the whole measurement. If a distribution build
+        # disagrees with the bundled one about where the speech starts, the
+        # offsets in the README are true of my machine and nowhere else.
+        # This is the job that would catch that.
+        run: python -m pytest tests/test_sync.py -q
+
+  exit-codes:
+    name: all three exit codes can happen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: python -m pip install -e .
+      - name: Build the derived fixture
+        run: python tools/make_fixture.py
+
+      - name: A clean file exits 0
+        # Short lines, comfortable durations, no media: nothing to report.
+        run: |
+          printf '1\n00:00:01,000 --> 00:00:03,000\nShort enough to read.\n\n2\n00:00:04,000 --> 00:00:06,000\nAnd so is this one.\n\n' > clean.srt
+          cuecheck clean.srt
+          test $? -eq 0
+
+      - name: A mistimed file exits 1 and names the two moved cues
+        # The end-to-end version of the claim: not just that findings exist,
+        # but that they are these two and no others.
+        run: |
+          set +e
+          cuecheck corpus/legible-shifted.srt corpus/legible-narration.m4a > out.txt
+          code=$?
+          set -e
+          cat out.txt
+          test $code -eq 1
+          grep -q '00:00:12,333 mistimed' out.txt
+          grep -q '00:00:35,167 early' out.txt
+          # Three findings would mean a false positive, which is the error
+          # that sends someone to retime a line that was correct.
+          test "$(grep -cE '^  00:[0-9:,]+ (early|late|mistimed|silent)' out.txt)" -eq 2
+
+      - name: The derived file exits with no timing findings at all
+        run: |
+          set +e
+          cuecheck corpus/legible-clean.srt corpus/legible-narration.m4a > clean-out.txt
+          set -e
+          cat clean-out.txt
+          grep -q 'every measurable cue is within' clean-out.txt
+          test "$(grep -cE '^  00:[0-9:,]+ (early|late|mistimed|silent)' clean-out.txt)" -eq 0
+
+      - name: A file that cannot be checked exits 2, not 0
+        # The reason this job exists. A tool that returns success when it
+        # measured nothing teaches a pipeline that silence means quality.
+        run: |
+          printf 'this is not a subtitle file\n' > junk.srt
+          set +e
+          cuecheck junk.srt; junk=$?
+          cuecheck corpus/legible-clean.srt no-such-video.mp4; missing=$?
+          set -e
+          echo "unreadable subtitle: $junk, missing media: $missing"
+          test $junk -eq 2
+          test $missing -eq 2
+
+      - name: Audio with no silence measures nothing and says so
+        # A music bed leaves no onset to measure against. The correct answer
+        # is "cannot measure", and printing zeroes would be the wrong one.
+        run: |
+          ffmpeg -v error -f lavfi -i "sine=frequency=440:duration=20" -c:a aac tone.m4a
+          set +e
+          cuecheck corpus/legible-clean.srt tone.m4a > tone-out.txt; code=$?
+          set -e
+          cat tone-out.txt
+          grep -q 'almost no silence' tone-out.txt
+          test "$(grep -cE '^  00:[0-9:,]+ (early|late|mistimed)' tone-out.txt)" -eq 0
